@@ -1,41 +1,110 @@
 "use client"
 
-import React, { useState } from "react"
+import React, {use, useEffect, useState} from "react"
 import {View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, StatusBar, Image} from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
-import { RadioButton } from "react-native-paper"
-import * as Google from "expo-google-app-auth";
+import {SafeAreaView} from "react-native-safe-area-context"
+import {RadioButton} from "react-native-paper"
 import Icon from "react-native-vector-icons/MaterialIcons"
-import firebase from "firebase/compat";
-import GoogleAuthProvider = firebase.auth.GoogleAuthProvider;
+import * as WebBrowser from "expo-web-browser";
+import {GoogleAuthProvider, signInWithCredential} from "firebase/auth";
+import * as Google from 'expo-auth-session/providers/google';
+import {db, firebaseAuth} from '../config/firebaseConfig';
+import * as AuthSession from 'expo-auth-session';
+import {get, ref} from "firebase/database";
 
 
 //********************** starting point **************************************
 
-const SignInScreen = ({ navigation }) => {
-    const [email, setEmail] = useState("")
+WebBrowser.maybeCompleteAuthSession();
+
+const SignInScreen = ({navigation}) => {
     const [password, setPassword] = useState("")
     const [showPassword, setShowPassword] = useState(false)
     const [userType, setUserType] = useState("user")
     const [showSignUp, setShowSignUp] = useState(false)
     const [error, setError] = useState<string | null>(null);
+    const [userInfo, setUserInfo] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [mobileNumber, setMobileNumber] = useState("")
 
-    const handleSignIn = () => {
-        if (!email || !password) {
-            Alert.alert("Error", "Please enter both email and password")
+    // useEffect(() => {
+    //     GoogleSignin.configure({
+    //         iosClientId: '1095582085214-8f1cv89c14gmft5hc5ofv038mv7bl63a.apps.googleusercontent.com',
+    //         androidClientId: '1095582085214-lq3ahb64cmnllvtub4sluonqis1r2kq8.apps.googleusercontent.com',
+    //         webClientId: '1095582085214-009k65qbttu9urm47pmi71liubcc1i97.apps.googleusercontent.com',
+    //
+    //     });
+    // }, []);
+
+    const handleSignIn = async () => {
+        if (!mobileNumber || !password) {
+            Alert.alert("Error", "Please enter both mobile number and password")
             return
         }
 
         // Check predefined credentials for different user types
-        if (email === "user@test.com" && password === "password") {
-            navigation.navigate("UserHome")
-        } else if (email === "owner@test.com" && password === "password") {
-            navigation.navigate("OwnerHome")
-        } else if (email === "admin@test.com" && password === "password") {
+        // if (email === "user@test.com" && password === "password") {
+        //     // console.log("user signed in.....")
+        //     navigation.navigate("UserMain")
+        // }
+        // } else if (email === "owner@test.com" && password === "password") {
+        //     navigation.navigate("OwnerHome")
+        // } else
+        if (mobileNumber === "3333333333" && password === "password") {
             navigation.navigate("AdminHome")
-        } else {
-            Alert.alert("Error", "Invalid credentials. Please try again.")
         }
+        // else {
+        //     Alert.alert("Error", "Invalid credentials. Please try again.")
+        // }
+
+        let userFound = false;
+        let userType = '';
+
+        try {
+            const ownerSnapshot = await get(ref(db, 'ownerdb'));
+            if (ownerSnapshot.exists()) {
+                const owners = ownerSnapshot.val();
+                for (const ownerId in owners) {
+                    const owner = owners[ownerId];
+                    if (owner.mobileNumber === mobileNumber && owner.password === password) {
+                        userFound = true;
+                        userType = 'owner';
+                        break;
+                    }
+                }
+            }
+
+            if (!userFound) {
+                const userSnapshot = await get(ref(db, 'userdb'));
+                if (userSnapshot.exists()) {
+                    const users = userSnapshot.val();
+                    for (const userId in users) {
+                        const user = users[userId];
+                        if (user.mobileNumber === mobileNumber && user.password === password) {
+                            userFound = true;
+                            userType = 'user';
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (userFound) {
+                if (userType == 'owner') {
+                    navigation.navigate("OwnerHome")
+                } else if (userType == 'user') {
+                    navigation.navigate("UserMain")
+                }
+            } else {
+                Alert.alert("Error", "Invalid credentials. Please try again.");
+            }
+
+        } catch (error) {
+            console.error('Error checking credentials: ', error);
+            Alert.alert("Error", "Something went wrong. Please try again.");
+        }
+
+
     }
 
     const handleSignUp = () => {
@@ -48,24 +117,93 @@ const SignInScreen = ({ navigation }) => {
         }
     }
 
-    const SocialButton = ({ icon, onPress }) => (
+    const SocialButton = ({icon, onPress}) => (
         <TouchableOpacity style={styles.socialButton} onPress={onPress}>
-            <Icon name={icon} size={24} color="#fff" />
+            <Icon name={icon} size={24} color="#fff"/>
         </TouchableOpacity>
     )
 
-    const signInWithGoogle = async () => {
-        // try {
-        //     const result = await Google.logInAsync({
-        //         iosClientId: Constants.expo
-        //     })
-        // }
-    }
+
+    const redirectUri = AuthSession.makeRedirectUri({useProxy: true});
+
+
+    const [request, response, promptAsync] = Google.useAuthRequest({
+        expoClientId: '1095582085214-1asue3usqgb6jka26kj1ia3fsu0nthua.apps.googleusercontent.com',
+        iosClientId: '1095582085214-8f1cv89c14gmft5hc5ofv038mv7bl63a.apps.googleusercontent.com',
+        androidClientId: '1095582085214-lq3ahb64cmnllvtub4sluonqis1r2kq8.apps.googleusercontent.com',
+        webClientId: '1095582085214-009k65qbttu9urm47pmi71liubcc1i97.apps.googleusercontent.com',
+        redirectUri
+    });
+
+    console.log("signInUrl: " + redirectUri);
+
+    useEffect(() => {
+        if (response) {
+            console.log("Google Response: " + response);
+        }
+        if (response?.type === 'success') {
+            const {id_token} = response.params;
+            const credential = GoogleAuthProvider.credential(id_token);
+            signInWithCredential(firebaseAuth, credential)
+                .then((userCredential) => {
+                    const user = userCredential.user;
+                    // navigation.navigate("UserHome"); // Or wherever appropriate
+                    console.log("successful logged in")
+                })
+                .catch((error) => {
+                    Alert.alert("Google Sign-In Failed", error.message);
+                });
+        }
+    }, [response]);
+
+
+    // const handleGoogleSignIn = async () => {
+    //     try {
+    //         setIsSubmitting(true);
+    //         await GoogleSignin.hasPlayServices();
+    //         const response = await GoogleSignin.signIn();
+    //         if (isSuccessResponse(response)) {
+    //             const {idToken, user} = response.data;
+    //             const {name, email, photo} = user;
+    //             navigation.navigate("Account", {name, email, photo})
+    //         }
+    //         setIsSubmitting(false);
+    //     } catch (error) {
+    //         if (isErrorWithCode(error)) {
+    //             switch (error.code) {
+    //                 case statusCodes.IN_PROGRESS:
+    //                     console.log("in progress")
+    //                     break;
+    //                 case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+    //                     console.log('play service not available');
+    //                     break;
+    //                 default:
+    //                     console.log('code: ' + error.code);
+    //             }
+    //         } else {
+    //             console.log('an error occurred');
+    //         }
+    //         setIsSubmitting(false);
+    //     }
+    //
+    // }
+
+    // const signInWithGoogle = async () => {
+    //
+    //     const [request, response, promptAsync] = Google.logInAsync({
+    //         iosClientId: '1095582085214-8f1cv89c14gmft5hc5ofv038mv7bl63a.apps.googleusercontent.com',
+    //         androidClientId: '1095582085214-lq3ahb64cmnllvtub4sluonqis1r2kq8.apps.googleusercontent.com',
+    //         webClientId: '1095582085214-009k65qbttu9urm47pmi71liubcc1i97.apps.googleusercontent.com',
+    //     });
+    //
+    //
+    //
+    // };
 
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="#000" />
+            <StatusBar barStyle="light-content" backgroundColor="#000"/>
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 <View style={styles.content}>
                     {/* Welcome text */}
@@ -82,18 +220,21 @@ const SignInScreen = ({ navigation }) => {
                         }}
                     />
 
-                    {/* Email input */}
-                    <View style={styles.inputGroup}>
-                        <Text style={styles.inputLabel}>Email</Text>
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Enter Your Email"
-                            placeholderTextColor="#9CA3AF"
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                        />
+                    {/* Mobile Number input */}
+                    <View style={styles.formGroup}>
+                        <Text style={styles.label}>Mobile Number</Text>
+                        <View style={styles.inputContainer}>
+                            <Text style={styles.inputPrefix}>+41</Text>
+                            <TextInput
+                                style={styles.input}
+                                placeholder="Enter mobile number"
+                                placeholderTextColor="#9CA3AF"
+                                keyboardType="phone-pad"
+                                maxLength={10}
+                                value={mobileNumber}
+                                onChangeText={setMobileNumber}
+                            />
+                        </View>
                     </View>
 
                     {/* Password input */}
@@ -109,7 +250,7 @@ const SignInScreen = ({ navigation }) => {
                                 secureTextEntry={!showPassword}
                             />
                             <TouchableOpacity style={styles.eyeButton} onPress={() => setShowPassword(!showPassword)}>
-                                <Icon name={showPassword ? "visibility-off" : "visibility"} size={20} color="#9CA3AF" />
+                                <Icon name={showPassword ? "visibility-off" : "visibility"} size={20} color="#9CA3AF"/>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -128,17 +269,9 @@ const SignInScreen = ({ navigation }) => {
 
                     {/* Divider */}
                     <View style={styles.divider}>
-                        <View style={styles.dividerLine} />
+                        <View style={styles.dividerLine}/>
                         <Text style={styles.dividerText}>Or Sign in with</Text>
-                        <View style={styles.dividerLine} />
-                    </View>
-
-                    {/* Social login buttons */}
-                    <View style={styles.socialButtonsContainer}>
-                        <SocialButton icon="facebook" onPress={() => console.log("Facebook login")} />
-                        {/*<SocialButton icon="google" onPress={() => console.log("Google login")} />*/}
-                        <SocialButton icon="google" onPress={() => signInWithGoogle} />
-                        <SocialButton icon="apple" onPress={() => console.log("Apple login")} />
+                        <View style={styles.dividerLine}/>
                     </View>
 
                     {/* Sign up section */}
@@ -176,16 +309,6 @@ const SignInScreen = ({ navigation }) => {
                                     <Text style={styles.radioLabel}>Restaurant/Club Owner</Text>
                                 </View>
 
-                                <View style={styles.radioOption}>
-                                    <RadioButton
-                                        value="admin"
-                                        status={userType === "admin" ? "checked" : "unchecked"}
-                                        onPress={() => setUserType("admin")}
-                                        color="#A855F7"
-                                        uncheckedColor="#6B7280"
-                                    />
-                                    <Text style={styles.radioLabel}>Admin</Text>
-                                </View>
                             </View>
 
                             <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
@@ -206,6 +329,37 @@ const styles = StyleSheet.create({
     },
     scrollContent: {
         flexGrow: 1,
+    },
+    formGroup: {
+        marginBottom: 24,
+    },
+    label: {
+        fontSize: 16,
+        marginBottom:
+            8,
+        marginTop:
+            8,
+        color:
+            "#FFFFFF",
+    },
+    inputContainer: {
+        flexDirection: "row",
+        alignItems:
+            "center",
+        backgroundColor:
+            "#374151",
+        borderRadius:
+            12,
+    },
+    inputPrefix: {
+        paddingHorizontal: 16,
+        fontSize: 16,
+        color:
+            "#FFFFFF",
+        borderRightWidth:
+            1,
+        borderRightColor:
+            "#4B5563",
     },
     statusBar: {
         flexDirection: "row",
@@ -251,7 +405,7 @@ const styles = StyleSheet.create({
         flex: 1,
         paddingHorizontal: 24,
         paddingVertical: 32,
-        justifyContent:'center'
+        justifyContent: 'center'
     },
     welcomeSection: {
         marginBottom: 32,
@@ -284,6 +438,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: "#fff",
         borderWidth: 1,
+        flex: 1,
         borderColor: "#4B5563",
     },
     passwordContainer: {

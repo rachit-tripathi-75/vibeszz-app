@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "1095582085214",
+    "firebase_url": "https://vibeszz-default-rtdb.firebaseio.com",
+    "project_id": "vibeszz",
+    "storage_bucket": "vibeszz.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095582085214:android:f24a67913f02595ccf04cf",
+        "android_client_info": {
+          "package_name": "com.example.clubapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1095582085214-4lmura79evck3rnh8v1m6pa9h5ddulka.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.clubapp",
+            "certificate_hash": "3e8403d22d77c0ff4e836b53855e435a188d8f14"
+          }
+        },
+        {
+          "client_id": "1095582085214-009k65qbttu9urm47pmi71liubcc1i97.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZWYzIrZ0-V6Xp80drzNTot6OnERdREjY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1095582085214-009k65qbttu9urm47pmi71liubcc1i97.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1095582085214-8f1cv89c14gmft5hc5ofv038mv7bl63a.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.clubapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -4,12 +4,22 @@ import { useState } from "react"
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
+import { ref, set, get } from "firebase/database"
+import { db } from "../config/firebaseConfig"
 
 const AdminRegistrationScreen = ({ navigation }) => {
     const [mobileNumber, setMobileNumber] = useState("")
     const [name, setName] = useState("")
 
-    const handleSubmit = () => {
+    // Function to generate a random key for admins (e.g., admin123)
+    const setKeyForAdmin = () => {
+        const randomNum = Math.floor(Math.random() * 1000) + 1;
+        console.log("Generated admin key: admin" + randomNum);
+        return "admin" + randomNum;
+    }
+
+    const uploadDataToFirebase = () => {
+        // Validate inputs
         if (!mobileNumber || !name) {
             Alert.alert("Error", "Please fill all the required fields")
             return
@@ -20,7 +30,51 @@ const AdminRegistrationScreen = ({ navigation }) => {
             return
         }
 
-        navigation.navigate("AdminHome")
+        // Step 1: Register the mobile number in registeredmobilenumbers
+        const mobileNumbersRef = ref(db, 'registeredmobilenumbers')
+
+        get(mobileNumbersRef)
+            .then((snapshot) => {
+                let mobileNumbers = []
+
+                // If data exists, get the current array; otherwise, start with an empty array
+                if (snapshot.exists()) {
+                    mobileNumbers = snapshot.val().mobileNumbers || []
+                    if (!Array.isArray(mobileNumbers)) {
+                        mobileNumbers = [mobileNumbers]
+                    }
+                }
+
+                // Append the new mobile number
+                mobileNumbers.push(mobileNumber)
+
+                // Write the updated array back to the database
+                return set(mobileNumbersRef, {
+                    mobileNumbers: mobileNumbers
+                })
+            })
+            .then(() => {
+                console.log("Mobile number registered successfully")
+
+                // Step 2: After registering the mobile number, upload the admin data
+                const primaryKey = setKeyForAdmin()
+                const adminRef = ref(db, `admindb/${primaryKey}`)
+
+                return set(adminRef, {
+                    name: name,
+                    mobileNumber: mobileNumber,
+                })
+            })
+            .then(() => {
+                // Step 3: Reset form fields and navigate to AdminHome
+                setName('')
+                setMobileNumber('')
+                navigation.navigate("AdminHome")
+                Alert.alert("Success", "Admin registered successfully")
+            })
+            .catch((error) => {
+                Alert.alert("Error", "Failed to register admin: " + error.message)
+            })
     }
 
     return (
@@ -62,7 +116,7 @@ const AdminRegistrationScreen = ({ navigation }) => {
                         />
                     </View>
 
-                    <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+                    <TouchableOpacity style={styles.submitButton} onPress={uploadDataToFirebase}>
                         <Text style={styles.buttonText}>Continue</Text>
                     </TouchableOpacity>
                 </View>

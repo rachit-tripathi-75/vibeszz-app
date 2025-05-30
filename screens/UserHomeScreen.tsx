@@ -1,336 +1,583 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
-import { Picker } from "@react-native-picker/picker"
-import { Ionicons } from "@expo/vector-icons"
+import {useState, useEffect} from "react"
+import {View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput, ScrollView, Alert} from "react-native"
+import {Picker} from "@react-native-picker/picker"
+import {Ionicons} from "@expo/vector-icons"
+import {off, onValue, ref} from "firebase/database";
+import {db} from "../config/firebaseConfig";
 
-// Mock data for venues
-const mockVenues = {
-    Mumbai: [
-        {
-            id: "1",
-            name: "Club Illusion",
-            type: "club",
-            capacity: 200,
-            currentOccupancy: 140,
-            image: require("../assets/clubillusion.jpg"),
-        },
-        {
-            id: "2",
-            name: "Spice Restaurant",
-            type: "restaurant",
-            capacity: 100,
-            currentOccupancy: 50,
-            image: require("../assets/spceresaurant.jpg"),
-        },
-        {
-            id: "3",
-            name: "Skybar",
-            type: "bar",
-            capacity: 150,
-            currentOccupancy: 75,
-            image: require("../assets/skybar.jpg"),
-        },
-    ],
-    Delhi: [
-        {
-            id: "4",
-            name: "Capital Club",
-            type: "club",
-            capacity: 300,
-            currentOccupancy: 210,
-            image: require("../assets/capitalclub.jpg"),
-        },
-        {
-            id: "5",
-            name: "Delhi Darbar",
-            type: "restaurant",
-            capacity: 120,
-            currentOccupancy: 90,
-            image: require("../assets/delhidarbar.jpg"),
-        },
-    ],
-    Bangalore: [
-        {
-            id: "6",
-            name: "Tech Pub",
-            type: "pub",
-            capacity: 80,
-            currentOccupancy: 60,
-            image: require("../assets/techpub.jpg"),
-        },
-        {
-            id: "7",
-            name: "Garden Restaurant",
-            type: "restaurant",
-            capacity: 150,
-            currentOccupancy: 45,
-            image: require("../assets/gardenrestaurant.jpg"),
-        },
-    ],
+const barImages = [
+    'https://via.placeholder.com/150',
+    'https://via.placeholder.com/150',
+    'https://via.placeholder.com/150',
+    'https://via.placeholder.com/150',
+];
+
+const drinkImages = [
+    'https://via.placeholder.com/150',
+    'https://via.placeholder.com/150',
+    'https://via.placeholder.com/150',
+];
+
+interface Bars {
+    capacity: string,
+    city: string,
+    id: string,
+    mobileNumber: string,
+    ownerName: string,
+    photoBase64: string,
+    venueName: string,
+    venueType: string,
 }
 
-const cities = ["Mumbai", "Delhi", "Bangalore"]
+interface Restaurant {
+    capacity: string,
+    city: string,
+    id: string,
+    mobileNumber: string,
+    ownerName: string,
+    photoBase64: string,
+    venueName: string,
+    venueType: string,
+}
 
-const UserHomeScreen = ({ navigation }) => {
-    const [selectedCity, setSelectedCity] = useState("Mumbai")
-    const [venues, setVenues] = useState([])
-    const [searchQuery, setSearchQuery] = useState("")
+interface Pub {
+    capacity: string,
+    city: string,
+    id: string,
+    mobileNumber: string,
+    ownerName: string,
+    photoBase64: string,
+    venueName: string,
+    venueType: string,
+}
 
-    useEffect(() => {
-        setVenues(mockVenues[selectedCity] || [])
-    }, [selectedCity])
+interface Club {
+    capacity: string,
+    city: string,
+    id: string,
+    mobileNumber: string,
+    ownerName: string,
+    photoBase64: string,
+    venueName: string,
+    venueType: string,
+}
 
-    const renderVenueItem = ({ item }) => {
-        const occupancyPercentage = Math.round((item.currentOccupancy / item.capacity) * 100)
-        const imageSource = typeof item.image === "string" ? { uri: item.image } : item.image;
-        console.log(`Image source for ${item.name}:`, imageSource); // Debug
+const UserHomeScreen = () => {
 
-        return (
-            <TouchableOpacity style={styles.venueCard} onPress={() => navigation.navigate("VenueDetail", { venue: item })}>
-                <Image source={imageSource} style={styles.venueImage} />
-                <View style={styles.venueInfo}>
-                    <Text style={styles.venueName}>{item.name}</Text>
-                    <Text style={styles.venueType}>{item.type.charAt(0).toUpperCase() + item.type.slice(1)}</Text>
-                    <View style={styles.occupancyContainer}>
-                        <View style={styles.progressBarContainer}>
-                            <View
-                                style={[
-                                    styles.progressBar,
-                                    { width: `${occupancyPercentage}%` },
-                                    occupancyPercentage > 80
-                                        ? styles.highOccupancy
-                                        : occupancyPercentage > 50
-                                            ? styles.mediumOccupancy
-                                            : styles.lowOccupancy,
-                                ]}
-                            />
-                        </View>
-                        <Text style={styles.occupancyText}>{occupancyPercentage}% Full</Text>
-                    </View>
-                </View>
-            </TouchableOpacity>
-        )
+    const [approvedIds, setApprovedIds] = useState<string[]>([]);
+    const [barsList, setBarsList] = useState<Bars[]>([]);
+    const [restaurantsList, setRestaurantsList] = useState<Restaurant[]>([]);
+    const [pubsList, setPubsList] = useState<Pub[]>([]);
+    const [clubsList, setClubsList] = useState<Club[]>([]);
+    const [loading, setLoading] = useState<boolean>(true); // progress bar state
+
+    const extractArray = (dataArray: Array<Array<string>>) => dataArray.flat();
+
+    const fetchDetailOfEachBar = (restaurantOwnerIds: string[]) => {
+        const requestedRef = ref(db, 'ownerdb/');
+
+        onValue(
+            requestedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const allBars = Object.values(data) as Bars[];
+                    const matchedBars = allBars.filter(restaurant =>
+                        restaurantOwnerIds.includes(restaurant.id) &&
+                        restaurant.venueType === 'bar'
+                    );
+
+                    if (matchedBars.length > 0) {
+                        setBarsList(matchedBars);
+                    } else {
+                        console.log('No matching restaurants found');
+                        setBarsList([]);
+                    }
+                } else {
+                    console.log('No owner data found');
+                    setBarsList([]);
+                }
+                setLoading(false); // data has received, so turn off loading......
+            },
+            (error) => {
+                console.error('Error fetching bar data:', error);
+                Alert.alert('Error', 'Failed to fetch bar data: ' + error.message);
+                setLoading(false);
+            }
+        );
+    };
+
+
+    const fetchDetailOfEachRestaurant = (restaurantOwnerIds: string[]) => {
+        const requestedRef = ref(db, 'ownerdb/');
+
+        onValue(
+            requestedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const allRestaurants = Object.values(data) as Restaurant[];
+                    const matchedRestaurant = allRestaurants.filter(restaurant =>
+                        restaurantOwnerIds.includes(restaurant.id) &&
+                        restaurant.venueType === 'restaurant'
+                    );
+
+                    if (matchedRestaurant.length > 0) {
+                        setRestaurantsList(matchedRestaurant);
+                    } else {
+                        console.log('No matching restaurants found');
+                        setRestaurantsList([]);
+                    }
+                } else {
+                    console.log('No owner data found');
+                    setRestaurantsList([]);
+                }
+                setLoading(false); // data has received, so turn off loading......
+            },
+            (error) => {
+                console.error('Error fetching bar data:', error);
+                Alert.alert('Error', 'Failed to fetch bar data: ' + error.message);
+                setLoading(false);
+            }
+        );
+    };
+
+    const fetchDetailOfEachPub = (restaurantOwnerIds: string[]) => {
+        const requestedRef = ref(db, 'ownerdb/');
+
+        onValue(
+            requestedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const allPubs = Object.values(data) as Pub[];
+                    const matchedPubs = allPubs.filter(restaurant =>
+                        restaurantOwnerIds.includes(restaurant.id) &&
+                        restaurant.venueType === 'pub'
+                    );
+
+                    if (matchedPubs.length > 0) {
+                        setPubsList(matchedPubs);
+                    } else {
+                        console.log('No matching pubs found');
+                        setPubsList([]);
+                    }
+                } else {
+                    console.log('No owner data found');
+                    setPubsList([]);
+                }
+                setLoading(false); // data has received, so turn off loading......
+            },
+            (error) => {
+                console.error('Error fetching pub data:', error);
+                Alert.alert('Error', 'Failed to fetch pub data: ' + error.message);
+                setLoading(false);
+            }
+        );
+    };
+
+    const fetchDetailOfEachClub = (restaurantOwnerIds: string[]) => {
+        const requestedRef = ref(db, 'ownerdb/');
+
+        onValue(
+            requestedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const allClubs = Object.values(data) as Restaurant[];
+                    const matchedClubs = allClubs.filter(restaurant =>
+                        restaurantOwnerIds.includes(restaurant.id) &&
+                        restaurant.venueType === 'club'
+                    );
+
+                    if (matchedClubs.length > 0) {
+                        setClubsList(matchedClubs);
+                    } else {
+                        console.log('No matching clubs found');
+                        setClubsList([]);
+                    }
+                } else {
+                    console.log('No owner data found');
+                    setClubsList([]);
+                }
+                setLoading(false); // data has received, so turn off loading......
+            },
+            (error) => {
+                console.error('Error fetching club data:', error);
+                Alert.alert('Error', 'Failed to fetch club data: ' + error.message);
+                setLoading(false);
+            }
+        );
+    };
+
+    const fetchBarsDataFromFirebase = () => {
+        setApprovedIds([]);
+        const approvedRef = ref(db, 'approved/');
+        setLoading(true);
+
+        const listener = onValue(
+            approvedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const dataArray: Array<Array<string>> = Object.values(data);
+                    const flatIds = extractArray(dataArray);
+                    setApprovedIds(flatIds);
+                    fetchDetailOfEachBar(flatIds);
+                } else {
+                    setApprovedIds([]);
+                    setBarsList([]);
+                    setLoading(false);
+                    console.log('No bars available');
+                }
+            },
+            (error) => {
+                console.error('Error fetching bars data:', error);
+                Alert.alert('Error', 'Failed to fetch bars data: ' + error.message);
+                setLoading(false);
+            }
+        );
+
+        return () => off(approvedRef, 'value', listener);
+    };
+
+
+    const fetchRestaurantsDataFromFirebase = () => {
+        setApprovedIds([]);
+        const approvedRef = ref(db, 'approved/');
+        setLoading(true);
+
+        const listener = onValue(
+            approvedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const dataArray: Array<Array<string>> = Object.values(data);
+                    const flatIds = extractArray(dataArray);
+                    setApprovedIds(flatIds);
+                    fetchDetailOfEachRestaurant(flatIds);
+                } else {
+                    setApprovedIds([]);
+                    setRestaurantsList([]);
+                    setLoading(false);
+                    console.log('No restaurants available');
+                }
+            },
+            (error) => {
+                console.error('Error fetching restaurants data:', error);
+                Alert.alert('Error', 'Failed to fetch restaurants data: ' + error.message);
+                setLoading(false);
+            }
+        );
+
+        return () => off(approvedRef, 'value', listener);
+    };
+
+    const fetchPubsDataFromFirebase = () => {
+        setApprovedIds([]);
+        const approvedRef = ref(db, 'approved/');
+        setLoading(true);
+
+        const listener = onValue(
+            approvedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const dataArray: Array<Array<string>> = Object.values(data);
+                    const flatIds = extractArray(dataArray);
+                    setApprovedIds(flatIds);
+                    fetchDetailOfEachPub(flatIds);
+                } else {
+                    setApprovedIds([]);
+                    setPubsList([]);
+                    setLoading(false);
+                    console.log('No pubs available');
+                }
+            },
+            (error) => {
+                console.error('Error fetching pubs data:', error);
+                Alert.alert('Error', 'Failed to fetch pubs data: ' + error.message);
+                setLoading(false);
+            }
+        );
+
+        return () => off(approvedRef, 'value', listener);
     }
 
+    const fetchClubsDataFromFirebase = () => {
+        setApprovedIds([]);
+        const approvedRef = ref(db, 'approved/');
+        setLoading(true);
+
+        const listener = onValue(
+            approvedRef,
+            (snapshot) => {
+                const data = snapshot.val();
+                if (data) {
+                    const dataArray: Array<Array<string>> = Object.values(data);
+                    const flatIds = extractArray(dataArray);
+                    setApprovedIds(flatIds);
+                    fetchDetailOfEachClub(flatIds);
+                } else {
+                    setApprovedIds([]);
+                    setClubsList([]);
+                    setLoading(false);
+                    console.log('No pubs available');
+                }
+            },
+            (error) => {
+                console.error('Error fetching pubs data:', error);
+                Alert.alert('Error', 'Failed to fetch pubs data: ' + error.message);
+                setLoading(false);
+            }
+        );
+
+        return () => off(approvedRef, 'value', listener);
+    }
+
+
+    useEffect(() => {
+        const cleanup = fetchBarsDataFromFirebase();
+        return cleanup;
+    }, []);
+
+    useEffect(() => {
+        const cleanup = fetchRestaurantsDataFromFirebase();
+        return cleanup;
+    }, []);
+
+    useEffect(() => {
+        const cleanup = fetchPubsDataFromFirebase();
+        return cleanup;
+    }, []);
+
+    useEffect(() => {
+        const cleanup = fetchClubsDataFromFirebase();
+        return cleanup;
+    }, []);
+
     return (
-        <SafeAreaView style={styles.container}>
+        <View style={styles.container}>
+            {/* Header Section */}
             <View style={styles.header}>
-                <View style={styles.greetingContainer}>
-                    <Text style={styles.greeting}>Good Morning 🔥</Text>
-                    <Text style={styles.userName}>Mr. Casanova</Text>
-                </View>
-                <TouchableOpacity style={styles.notificationButton}>
-                    <Ionicons name="notifications-outline" size={24} color="#9CA3AF" />
-                </TouchableOpacity>
+                <Text style={styles.greeting}>Good Morning 🔥</Text>
+                <Text style={styles.name}>Mr. Casanova</Text>
             </View>
 
-            <View style={styles.searchContainer}>
-                <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
-                <TextInput
-                    style={styles.searchInput}
-                    placeholder="Find bars..."
-                    placeholderTextColor="#9CA3AF"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                />
-            </View>
+            {/* Main Content */}
+            <ScrollView style={styles.scrollView}>
+                {/* Featured Bar Section */}
+                <Image source={require("../assets/spceresaurant.jpg")} style={styles.featuredImage}/>
 
-            <View style={styles.cityPickerContainer}>
-                <Text style={styles.cityLabel}>Select City:</Text>
-                <View style={styles.pickerWrapper}>
-                    <Picker
-                        selectedValue={selectedCity}
-                        onValueChange={(itemValue) => setSelectedCity(itemValue)}
-                        style={styles.cityPicker}
-                        dropdownIconColor="#9CA3AF"
-                    >
-                        {cities.map((city) => (
-                            <Picker.Item key={city} label={city} value={city} color="#FFFFFF" />
-                        ))}
-                    </Picker>
-                </View>
-            </View>
+                {/* Best Bars Section */}
+                {!loading && barsList.length > 0 && (
+                    <>
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Best Bars</Text>
+                            <TouchableOpacity>
+                                <Text style={styles.viewAll}>View all</Text>
+                            </TouchableOpacity>
+                        </View>
 
-            <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Best Venues</Text>
-                <TouchableOpacity>
-                    <Text style={styles.viewAllText}>View all</Text>
-                </TouchableOpacity>
-            </View>
+                        <FlatList
+                            horizontal
+                            data={barsList}
+                            keyExtractor={(item, index) => index.toString()}
+                            renderItem={({item}) => (
+                                <View style={styles.barCard}>
+                                    <Image
+                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
+                                        style={styles.sectionImage}
+                                    />
+                                    <Text style={styles.barName}>{item.venueName}</Text>
+                                    <Text style={styles.city}>{item.city}</Text>
+                                </View>
+                            )}
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.horizontalScroll}
+                        />
+                    </>
+                )}
 
-            {venues.length > 0 ? (
-                <FlatList
-                    data={venues}
-                    renderItem={renderVenueItem}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.venueList}
-                    showsVerticalScrollIndicator={false}
-                />
-            ) : (
-                <View style={styles.emptyState}>
-                    <Text style={styles.emptyStateText}>No venues available in this city</Text>
-                </View>
-            )}
-        </SafeAreaView>
-    )
+                {/* Best Restaurants Section */}
+                {!loading && restaurantsList.length > 0 && (
+                    <>
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Best Restaurants</Text>
+                            <TouchableOpacity>
+                                <Text style={styles.viewAll}>View all</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <FlatList
+                            horizontal
+                            data={restaurantsList}
+                            keyExtractor={(item, index) => index.toString()}
+                            renderItem={({item}) => (
+                                <View style={styles.barCard}>
+                                    <Image
+                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
+                                        style={styles.sectionImage}
+                                    />
+                                    <Text style={styles.barName}>{item.venueName}</Text>
+                                    <Text style={styles.city}>{item.city}</Text>
+                                </View>
+                            )}
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.horizontalScroll}
+                        />
+                    </>
+                )}
+                {/* Best Clubs Section */}
+                {!loading && clubsList.length > 0 && (
+                    <>
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Best Clubs</Text>
+                            <TouchableOpacity>
+                                <Text style={styles.viewAll}>View all</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <FlatList
+                            horizontal
+                            data={clubsList}
+                            keyExtractor={(item, index) => index.toString()}
+                            renderItem={({item}) => (
+                                <View style={styles.barCard}>
+                                    <Image
+                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
+                                        style={styles.sectionImage}
+                                    />
+                                    <Text style={styles.barName}>{item.venueName}</Text>
+                                    <Text style={styles.city}>{item.city}</Text>
+                                </View>
+                            )}
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.horizontalScroll}
+                        />
+                    </>
+                )}
+                {/* Best Pubs Section */}
+                {!loading && pubsList.length > 0 && (
+                    <>
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Best Pubs</Text>
+                            <TouchableOpacity>
+                                <Text style={styles.viewAll}>View all</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <FlatList
+                            horizontal
+                            data={pubsList}
+                            keyExtractor={(item, index) => index.toString()}
+                            renderItem={({item}) => (
+                                <View style={styles.barCard}>
+                                    <Image
+                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
+                                        style={styles.sectionImage}
+                                    />
+                                    <Text style={styles.barName}>{item.venueName}</Text>
+                                    <Text style={styles.city}>{item.city}</Text>
+                                </View>
+                            )}
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.horizontalScroll}
+                        />
+                    </>
+                )}
+
+
+            </ScrollView>
+
+        </View>
+    );
+
+
 }
+
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#000000",
+        backgroundColor: '#000',
     },
     header: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingHorizontal: 24,
-        paddingTop: 16,
-        paddingBottom: 24,
-    },
-    greetingContainer: {
-        flex: 1,
+        padding: 20,
+        paddingTop: 40,
     },
     greeting: {
+        color: '#fff',
         fontSize: 16,
-        color: "#9CA3AF",
-        marginBottom: 4,
     },
-    userName: {
-        fontSize: 24,
-        fontWeight: "bold",
-        color: "#FFFFFF",
+    name: {
+        color: '#fff',
+        fontSize: 28,
+        fontWeight: 'bold',
     },
-    notificationButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: "#374151",
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    searchContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#F3F4F6",
-        borderRadius: 12,
-        marginHorizontal: 24,
-        marginBottom: 24,
-        paddingHorizontal: 16,
-    },
-    searchIcon: {
-        marginRight: 12,
-    },
-    searchInput: {
+    scrollView: {
         flex: 1,
-        paddingVertical: 16,
-        fontSize: 16,
-        color: "#374151",
     },
-    cityPickerContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 24,
-        marginBottom: 24,
+    featuredImage: {
+        width: '90%',
+        height: 200,
+        borderRadius: 10,
+        alignSelf: 'center',
+        marginVertical: 10,
     },
-    cityLabel: {
-        fontSize: 16,
-        marginRight: 12,
-        color: "#FFFFFF",
-    },
-    pickerWrapper: {
-        flex: 1,
-        backgroundColor: "#374151",
-        borderRadius: 8,
-        overflow: "hidden",
-    },
-    cityPicker: {
-        height: 40,
-        color: "#FFFFFF",
-    },
-    sectionHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        paddingHorizontal: 24,
-        marginBottom: 16,
+    section: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        marginTop: 20,
     },
     sectionTitle: {
+        color: '#fff',
         fontSize: 20,
-        fontWeight: "bold",
-        color: "#FFFFFF",
+        fontWeight: 'bold',
     },
-    viewAllText: {
+    viewAll: {
+        color: '#888',
         fontSize: 14,
-        color: "#8B5CF6",
     },
-    venueList: {
-        paddingHorizontal: 24,
+    horizontalScroll: {
+        paddingHorizontal: 20,
+        marginTop: 10,
     },
-    venueCard: {
-        backgroundColor: "#374151",
-        borderRadius: 16,
-        overflow: "hidden",
-        marginBottom: 16,
+    sectionImage: {
+        width: 150,
+        height: 150,
+        borderRadius: 10,
+        marginRight: 10,
     },
-    venueImage: {
-        width: "100%",
-        height: 160,
+    navBar: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        alignItems: 'center',
+        backgroundColor: '#333',
+        paddingVertical: 10,
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
     },
-    venueInfo: {
-        padding: 16,
+    navItem: {
+        alignItems: 'center',
     },
-    venueName: {
-        fontSize: 18,
-        fontWeight: "bold",
-        color: "#FFFFFF",
-        marginBottom: 4,
+    navIcon: {
+        fontSize: 24,
+        color: '#888',
     },
-    venueType: {
-        fontSize: 14,
-        color: "#9CA3AF",
-        marginBottom: 12,
+    profileImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
     },
-    occupancyContainer: {
-        marginTop: 8,
-    },
-    progressBarContainer: {
-        height: 8,
-        backgroundColor: "#1F2937",
-        borderRadius: 4,
-        overflow: "hidden",
-        marginBottom: 8,
-    },
-    progressBar: {
-        height: "100%",
-    },
-    lowOccupancy: {
-        backgroundColor: "#10B981",
-    },
-    mediumOccupancy: {
-        backgroundColor: "#F59E0B",
-    },
-    highOccupancy: {
-        backgroundColor: "#EF4444",
-    },
-    occupancyText: {
-        fontSize: 14,
-        color: "#9CA3AF",
-    },
-    emptyState: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 24,
-    },
-    emptyStateText: {
-        fontSize: 16,
-        color: "#9CA3AF",
-        textAlign: "center",
-    },
-})
+    barCard: {marginRight: 10, alignItems: 'center'},
+    barName: {marginTop: 5, fontWeight: '600'},
+    city: {fontSize: 12, color: 'gray'}
+});
+
 
 export default UserHomeScreen

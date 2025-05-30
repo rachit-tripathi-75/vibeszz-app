@@ -1,19 +1,26 @@
 "use client"
 
-import { useState } from "react"
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
-import { RadioButton } from "react-native-paper"
-import { Ionicons } from "@expo/vector-icons"
+import React, {useState} from "react"
+import {View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert} from "react-native"
+import {SafeAreaView} from "react-native-safe-area-context"
+import {RadioButton} from "react-native-paper"
+import {Ionicons} from "@expo/vector-icons"
+import {get, ref, set} from "firebase/database";
+import {db} from "../config/firebaseConfig";
+import Icon from "react-native-vector-icons/MaterialIcons";
 
-const UserRegistrationScreen = ({ navigation }) => {
+const UserRegistrationScreen = ({navigation}) => {
     const [mobileNumber, setMobileNumber] = useState("")
     const [name, setName] = useState("")
     const [city, setCity] = useState("")
     const [gender, setGender] = useState("male")
+    const [password, setPassword] = useState("")
+    const [confirmPassword, setConfirmPassword] = useState("")
+    const [showPassword, setShowPassword] = useState(false)
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
     const handleSubmit = () => {
-        if (!mobileNumber || !name || !city) {
+        if (!mobileNumber || !name || !city || !password || !confirmPassword) {
             Alert.alert("Error", "Please fill all the required fields")
             return
         }
@@ -23,17 +30,78 @@ const UserRegistrationScreen = ({ navigation }) => {
             return
         }
 
-        navigation.navigate("UserHome")
+        if (password != confirmPassword) {
+            Alert.alert("Error", "Passwords do not match");
+            return
+        }
+
+        const setKeyForUser = () => {
+            const randomNum = Math.floor(Math.random() * 1000) + 1;
+            console.log("Generated admin key: admin" + randomNum);
+            return randomNum;
+        }
+
+
+        const mobileNumbersRef = ref(db, 'registeredmobilenumbers');
+        const primaryKeyForUser = "user" + setKeyForUser();
+
+        get(mobileNumbersRef)
+            .then((snapshot) => {
+                let mobileNumbers = [];
+
+                // If data exists, get the current array; otherwise, start with an empty array
+                if (snapshot.exists()) {
+                    mobileNumbers = snapshot.val().mobileNumbers || [];
+                    if (!Array.isArray(mobileNumbers)) {
+                        mobileNumbers = [mobileNumbers];
+                    }
+                }
+
+                if (mobileNumbers.includes(mobileNumber)) {
+                    alert("This mobile number already exists. Please use a different mobile number");
+                    return Promise.reject(new Error("Mobile number already exists"));
+                }
+
+                // Append the new mobile number
+                mobileNumbers.push(mobileNumber);
+
+                // Write the updated array back to the database
+                return set(mobileNumbersRef, {
+                    mobileNumbers: mobileNumbers,
+                });
+            })
+            .then(() => {
+                console.log("Mobile number registered successfully");
+
+                const ownerRef = ref(db, `userdb/${primaryKeyForUser}`);
+
+                return set(ownerRef, {
+                    id: primaryKeyForUser,
+                    name: name,
+                    mobileNumber: mobileNumber,
+                    city: city,
+                    gender: gender,
+                    password: password
+                });
+            })
+            .then(() => {
+                navigation.navigate("UserMain");
+            })
+            .catch((error) => {
+                console.error("Error details:", error); // Log detailed error for debugging
+                Alert.alert("Error", `Failed to register owner: ${error.message}`);
+            });
+
     }
 
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                    <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+                    <Ionicons name="arrow-back" size={24} color="#FFFFFF"/>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>User Registration</Text>
-                <View style={styles.placeholder} />
+                <View style={styles.placeholder}/>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -41,7 +109,7 @@ const UserRegistrationScreen = ({ navigation }) => {
                     <View style={styles.formGroup}>
                         <Text style={styles.label}>Mobile Number</Text>
                         <View style={styles.inputContainer}>
-                            <Text style={styles.inputPrefix}>+91</Text>
+                            <Text style={styles.inputPrefix}>+41</Text>
                             <TextInput
                                 style={styles.input}
                                 placeholder="Enter mobile number"
@@ -108,6 +176,43 @@ const UserRegistrationScreen = ({ navigation }) => {
                                 />
                                 <Text style={styles.radioText}>Other</Text>
                             </View>
+                        </View>
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Password</Text>
+                        <View style={styles.passwordContainer}>
+                            <TextInput
+                                style={styles.passwordInput}
+                                placeholder="Enter Your Password"
+                                placeholderTextColor="#9CA3AF"
+                                value={password}
+                                onChangeText={setPassword}
+                                secureTextEntry={!showPassword}
+                            />
+                            <TouchableOpacity style={styles.eyeButton}
+                                              onPress={() => setShowPassword(!showPassword)}>
+                                <Icon name={showPassword ? "visibility-off" : "visibility"} size={20}
+                                      color="#9CA3AF"/>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                    <View style={styles.inputGroup}>
+                        <Text style={styles.inputLabel}>Confirm Password</Text>
+                        <View style={styles.passwordContainer}>
+                            <TextInput
+                                style={styles.passwordInput}
+                                placeholder="Confirm Your Password"
+                                placeholderTextColor="#9CA3AF"
+                                value={confirmPassword}
+                                onChangeText={setConfirmPassword}
+                                secureTextEntry={!showConfirmPassword}
+                            />
+                            <TouchableOpacity style={styles.eyeButton}
+                                              onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                                <Icon name={showConfirmPassword ? "visibility-off" : "visibility"} size={20}
+                                      color="#9CA3AF"/>
+                            </TouchableOpacity>
                         </View>
                     </View>
 
@@ -206,6 +311,52 @@ const styles = StyleSheet.create({
         alignItems: "center",
         marginTop: 24,
     },
+    inputGroup: {
+        marginBottom: 16,
+    }
+    ,
+    inputLabel: {
+        color: "#fff",
+        fontSize:
+            16,
+        marginBottom:
+            8,
+        fontWeight:
+            "500",
+    }
+    ,
+    passwordContainer: {
+        flexDirection: "row",
+        alignItems:
+            "center",
+        backgroundColor:
+            "#374151",
+        borderRadius:
+            8,
+        borderWidth:
+            1,
+        borderColor:
+            "#4B5563",
+    }
+    ,
+    passwordInput: {
+        flex: 1,
+        paddingHorizontal:
+            16,
+        paddingVertical:
+            16,
+        fontSize:
+            16,
+        color:
+            "#fff",
+    }
+    ,
+    eyeButton: {
+        paddingHorizontal: 16,
+        paddingVertical:
+            16,
+    }
+    ,
     buttonText: {
         color: "#FFFFFF",
         fontSize: 18,
