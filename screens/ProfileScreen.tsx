@@ -1,67 +1,112 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import {View, Text, StyleSheet, ScrollView, TouchableOpacity, Image} from "react-native"
+import {Ionicons} from "@expo/vector-icons"
+import {useEffect, useState} from "react";
+import {onValue, ref} from "firebase/database";
+import {db} from "../config/firebaseConfig";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import {CommonActions, useNavigation, NavigationContainer} from "@react-navigation/native";
+
+const getData = async (key) => {
+    try {
+        const value: string | null = await AsyncStorage.getItem(key);
+        if (value != null) {
+            return value;
+        }
+    } catch (error) {
+        console.error("Reading error: ", error);
+    }
+};
+
+
+
+// const userId: string = await getData('userId');
+
+// const navigation = useNavigation();
+
+interface UserData {
+    city: string;
+    gender: string;
+    id: string;
+    mobileNumber: string,
+    name: string,
+    password: string;
+    photoBase64?: string;
+}
 
 const ProfileScreen = () => {
-    const menuItems = [
-        { id: "1", title: "Edit Profile", icon: "person-outline" },
-        { id: "2", title: "Favorite Venues", icon: "heart-outline" },
-        { id: "3", title: "Booking History", icon: "time-outline" },
-        { id: "4", title: "Payment Methods", icon: "card-outline" },
-        { id: "5", title: "Notifications", icon: "notifications-outline" },
-        { id: "6", title: "Privacy Settings", icon: "shield-outline" },
-        { id: "7", title: "Help & Support", icon: "help-circle-outline" },
-        { id: "8", title: "About", icon: "information-circle-outline" },
-    ]
+
+    const [profileData, setProfileData] = useState<UserData | null>(null);
+    const [userId, setUserId] = useState(null);
+
+
+    useEffect(() => {
+        const fetchUserId = async() => {
+            const value : string | undefined = await getData('userId');
+            setUserId(value);
+        };
+        fetchUserId();
+    }, []);
+
+
+    useEffect(() => {
+        const getUserProfileDetails = () => {
+
+            const path = `userdb/${userId}`;
+            const userProfileDetailsPref = ref(db, path);
+
+            const unsubscribe = onValue(userProfileDetailsPref, (snapshot) => {
+                if (snapshot.exists()) {
+                    const data: UserData = snapshot.val();
+                    setProfileData(data);
+                    console.log(`yes i found user's data`);
+                } else {
+                    setProfileData(null);
+                }
+
+            }, (error) => {
+                console.error("Error fetching user's profile details: " + error);
+                setProfileData(null);
+            });
+            return () => unsubscribe();
+        };
+
+        getUserProfileDetails()
+
+
+    }, []);
+
+
+    const handleLogout = () => {
+        // navigation.dispatch(
+        //     CommonActions.reset({
+        //         index: 0,
+        //         routes: [{name: "SignIn"}]
+        //     })
+        // )
+    }
+
 
     return (
         <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
                 <View style={styles.profileImageContainer}>
-                    <Image source={{ uri: "/placeholder.svg?height=100&width=100" }} style={styles.profileImage} />
+                    <Image source={{uri: "/placeholder.svg?height=100&width=100"}} style={styles.profileImage}/>
                     <TouchableOpacity style={styles.editImageButton}>
-                        <Ionicons name="camera" size={16} color="#FFFFFF" />
+                        <Ionicons name="camera" size={16} color="#FFFFFF"/>
                     </TouchableOpacity>
                 </View>
 
-                <Text style={styles.userName}>Mr. Casanova</Text>
-                <Text style={styles.userEmail}>casanova@example.com</Text>
+                <Text style={styles.userName}>{profileData?.name}</Text>
+                <Text style={styles.userEmail}>{profileData?.mobileNumber}</Text>
 
-                <TouchableOpacity style={styles.editProfileButton}>
-                    <Text style={styles.editProfileText}>Edit Profile</Text>
-                </TouchableOpacity>
+                {/*<TouchableOpacity style={styles.editProfileButton}>*/}
+                {/*    <Text style={styles.editProfileText}>Edit Profile</Text>*/}
+                {/*</TouchableOpacity>*/}
             </View>
 
-            <View style={styles.statsContainer}>
-                <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>24</Text>
-                    <Text style={styles.statLabel}>Venues Visited</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>12</Text>
-                    <Text style={styles.statLabel}>Favorites</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statItem}>
-                    <Text style={styles.statNumber}>8</Text>
-                    <Text style={styles.statLabel}>Reviews</Text>
-                </View>
-            </View>
 
-            <View style={styles.menuContainer}>
-                {menuItems.map((item) => (
-                    <TouchableOpacity key={item.id} style={styles.menuItem}>
-                        <View style={styles.menuItemLeft}>
-                            <Ionicons name={item.icon as any} size={24} color="#9CA3AF" />
-                            <Text style={styles.menuItemText}>{item.title}</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            <TouchableOpacity style={styles.logoutButton}>
-                <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                <Ionicons name="log-out-outline" size={24} color="#EF4444"/>
                 <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
         </ScrollView>

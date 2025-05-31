@@ -6,19 +6,23 @@ import {Picker} from "@react-native-picker/picker"
 import {Ionicons} from "@expo/vector-icons"
 import {off, onValue, ref} from "firebase/database";
 import {db} from "../config/firebaseConfig";
+import {useNavigation} from "@react-navigation/native";
+import VenueDetailsScreen from "../screens/VenueDetailsScreen";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const barImages = [
-    'https://via.placeholder.com/150',
-    'https://via.placeholder.com/150',
-    'https://via.placeholder.com/150',
-    'https://via.placeholder.com/150',
-];
 
-const drinkImages = [
-    'https://via.placeholder.com/150',
-    'https://via.placeholder.com/150',
-    'https://via.placeholder.com/150',
-];
+const getData = async (key) => {
+    try {
+        const value = await AsyncStorage.getItem(key);
+        if (value !== null) {
+            // value previously stored
+            return value;
+        }
+    } catch (e) {
+        console.error('Reading error:', e);
+    }
+};
+
 
 interface Bars {
     capacity: string,
@@ -64,6 +68,17 @@ interface Club {
     venueType: string,
 }
 
+
+interface UserData {
+    city: string;
+    gender: string;
+    id: string;
+    mobileNumber: string,
+    name: string,
+    password: string;
+    photoBase64?: string;
+}
+
 const UserHomeScreen = () => {
 
     const [approvedIds, setApprovedIds] = useState<string[]>([]);
@@ -72,6 +87,47 @@ const UserHomeScreen = () => {
     const [pubsList, setPubsList] = useState<Pub[]>([]);
     const [clubsList, setClubsList] = useState<Club[]>([]);
     const [loading, setLoading] = useState<boolean>(true); // progress bar state
+    const [profileData, setProfileData] = useState<UserData | null>(null);
+    const [userId, setUserId] = useState(null);
+
+    const navigation = useNavigation();
+
+    useEffect(() => {
+        const fetchUserId = async() => {
+            const value = await getData('userId');
+            setUserId(value);
+        };
+        fetchUserId();
+    }, []);
+
+
+    useEffect(() => {
+        const getUserProfileDetails = () => {
+
+            const path = `userdb/${userId}`;
+            const userProfileDetailsPref = ref(db, path);
+
+            const unsubscribe = onValue(userProfileDetailsPref, (snapshot) => {
+                if (snapshot.exists()) {
+                    const data: UserData = snapshot.val();
+                    setProfileData(data);
+                    console.log(`yes i found user's data`);
+                } else {
+                    setProfileData(null);
+                }
+
+            }, (error) => {
+                console.error("Error fetching user's profile details: " + error);
+                setProfileData(null);
+            });
+            return () => unsubscribe();
+        };
+
+        getUserProfileDetails()
+
+
+    }, []);
+
 
     const extractArray = (dataArray: Array<Array<string>>) => dataArray.flat();
 
@@ -358,12 +414,33 @@ const UserHomeScreen = () => {
         return cleanup;
     }, []);
 
+
+    // Reusable render function for consistency
+    const renderVenueCard = ({ item }: { item: Bars | Restaurant | Pub | Club }) => (
+        <TouchableOpacity
+            onPress={() => {
+                navigation.navigate("VenueDetails", {
+                    venueId: item.id,
+                });
+            }}
+        >
+            <View style={styles.barCard}>
+                <Image
+                    source={{ uri: `data:image/jpeg;base64,${item.photoBase64}` }}
+                    style={styles.sectionImage}
+                />
+                <Text style={styles.barName}>{item.venueName}</Text>
+                <Text style={styles.city}>{item.city}</Text>
+            </View>
+        </TouchableOpacity>
+    );
+
     return (
         <View style={styles.container}>
             {/* Header Section */}
             <View style={styles.header}>
-                <Text style={styles.greeting}>Good Morning 🔥</Text>
-                <Text style={styles.name}>Mr. Casanova</Text>
+                <Text style={styles.greeting}>Greetings 🔥</Text>
+                <Text style={styles.name}>{profileData?.name}</Text>
             </View>
 
             {/* Main Content */}
@@ -376,25 +453,13 @@ const UserHomeScreen = () => {
                     <>
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Best Bars</Text>
-                            <TouchableOpacity>
-                                <Text style={styles.viewAll}>View all</Text>
-                            </TouchableOpacity>
                         </View>
 
                         <FlatList
                             horizontal
                             data={barsList}
                             keyExtractor={(item, index) => index.toString()}
-                            renderItem={({item}) => (
-                                <View style={styles.barCard}>
-                                    <Image
-                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
-                                        style={styles.sectionImage}
-                                    />
-                                    <Text style={styles.barName}>{item.venueName}</Text>
-                                    <Text style={styles.city}>{item.city}</Text>
-                                </View>
-                            )}
+                            renderItem={renderVenueCard}
                             showsHorizontalScrollIndicator={false}
                             style={styles.horizontalScroll}
                         />
@@ -406,25 +471,13 @@ const UserHomeScreen = () => {
                     <>
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Best Restaurants</Text>
-                            <TouchableOpacity>
-                                <Text style={styles.viewAll}>View all</Text>
-                            </TouchableOpacity>
                         </View>
 
                         <FlatList
                             horizontal
                             data={restaurantsList}
                             keyExtractor={(item, index) => index.toString()}
-                            renderItem={({item}) => (
-                                <View style={styles.barCard}>
-                                    <Image
-                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
-                                        style={styles.sectionImage}
-                                    />
-                                    <Text style={styles.barName}>{item.venueName}</Text>
-                                    <Text style={styles.city}>{item.city}</Text>
-                                </View>
-                            )}
+                            renderItem={renderVenueCard}
                             showsHorizontalScrollIndicator={false}
                             style={styles.horizontalScroll}
                         />
@@ -435,25 +488,14 @@ const UserHomeScreen = () => {
                     <>
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Best Clubs</Text>
-                            <TouchableOpacity>
-                                <Text style={styles.viewAll}>View all</Text>
-                            </TouchableOpacity>
+
                         </View>
 
                         <FlatList
                             horizontal
                             data={clubsList}
                             keyExtractor={(item, index) => index.toString()}
-                            renderItem={({item}) => (
-                                <View style={styles.barCard}>
-                                    <Image
-                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
-                                        style={styles.sectionImage}
-                                    />
-                                    <Text style={styles.barName}>{item.venueName}</Text>
-                                    <Text style={styles.city}>{item.city}</Text>
-                                </View>
-                            )}
+                            renderItem={renderVenueCard}
                             showsHorizontalScrollIndicator={false}
                             style={styles.horizontalScroll}
                         />
@@ -473,16 +515,7 @@ const UserHomeScreen = () => {
                             horizontal
                             data={pubsList}
                             keyExtractor={(item, index) => index.toString()}
-                            renderItem={({item}) => (
-                                <View style={styles.barCard}>
-                                    <Image
-                                        source={{uri: `data:image/jpeg;base64,${item.photoBase64}`}}
-                                        style={styles.sectionImage}
-                                    />
-                                    <Text style={styles.barName}>{item.venueName}</Text>
-                                    <Text style={styles.city}>{item.city}</Text>
-                                </View>
-                            )}
+                            renderItem={renderVenueCard}
                             showsHorizontalScrollIndicator={false}
                             style={styles.horizontalScroll}
                         />
@@ -576,7 +609,7 @@ const styles = StyleSheet.create({
     },
     barCard: {marginRight: 10, alignItems: 'center'},
     barName: {marginTop: 5, fontWeight: '600'},
-    city: {fontSize: 12, color: 'gray'}
+    city: {fontSize: 12, color: 'white'}
 });
 
 

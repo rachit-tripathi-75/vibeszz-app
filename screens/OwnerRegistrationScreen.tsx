@@ -22,6 +22,7 @@ import {ref, set, onValue, get} from 'firebase/database';
 import * as FileSystem from 'expo-file-system';
 import {degToRad} from "react-native-gesture-handler/lib/typescript/web/utils";
 import Icon from "react-native-vector-icons/MaterialIcons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 
 const OwnerRegistrationScreen = ({navigation}) => {
@@ -117,6 +118,14 @@ const OwnerRegistrationScreen = ({navigation}) => {
         const requestedRef = ref(db, 'requested'); // Changed to 'approved' based on your comment
         const primaryKeyForOwner = "owner" + setKeyForOwner();
 
+        const storeData = async(key: string, value: string) => {
+            try {
+                await AsyncStorage.setItem(key, value);
+            } catch (e) {
+                console.error('Saving error: ', e);
+            }
+        };
+
         get(mobileNumbersRef)
             .then((snapshot) => {
                 let mobileNumbers = [];
@@ -146,6 +155,8 @@ const OwnerRegistrationScreen = ({navigation}) => {
                 console.log("Mobile number registered successfully");
 
                 const ownerRef = ref(db, `ownerdb/${primaryKeyForOwner}`);
+
+                storeData('userId', primaryKeyForOwner);
 
                 return set(ownerRef, {
                     id: primaryKeyForOwner,

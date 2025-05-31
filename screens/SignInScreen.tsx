@@ -11,6 +11,7 @@ import * as Google from 'expo-auth-session/providers/google';
 import {db, firebaseAuth} from '../config/firebaseConfig';
 import * as AuthSession from 'expo-auth-session';
 import {get, ref} from "firebase/database";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 
 //********************** starting point **************************************
@@ -35,6 +36,14 @@ const SignInScreen = ({navigation}) => {
     //
     //     });
     // }, []);
+
+    const storeData = async(key: string, value: string) => {
+        try {
+            await AsyncStorage.setItem(key, value);
+        } catch (e) {
+            console.error('Saving error: ', e);
+        }
+    };
 
     const handleSignIn = async () => {
         if (!mobileNumber || !password) {
@@ -66,6 +75,7 @@ const SignInScreen = ({navigation}) => {
                 const owners = ownerSnapshot.val();
                 for (const ownerId in owners) {
                     const owner = owners[ownerId];
+                    await storeData('ownerId', owner);
                     if (owner.mobileNumber === mobileNumber && owner.password === password) {
                         userFound = true;
                         userType = 'owner';
@@ -80,6 +90,7 @@ const SignInScreen = ({navigation}) => {
                     const users = userSnapshot.val();
                     for (const userId in users) {
                         const user = users[userId];
+                        await storeData('userId', user);
                         if (user.mobileNumber === mobileNumber && user.password === password) {
                             userFound = true;
                             userType = 'user';
@@ -112,8 +123,6 @@ const SignInScreen = ({navigation}) => {
             navigation.navigate("UserRegistration")
         } else if (userType === "owner") {
             navigation.navigate("OwnerRegistration")
-        } else if (userType === "admin") {
-            navigation.navigate("AdminRegistration")
         }
     }
 
@@ -255,24 +264,12 @@ const SignInScreen = ({navigation}) => {
                         </View>
                     </View>
 
-                    {/* Forgot password */}
-                    <View style={styles.forgotPasswordContainer}>
-                        <TouchableOpacity>
-                            <Text style={styles.forgotPasswordText}>Forget Password?</Text>
-                        </TouchableOpacity>
-                    </View>
 
                     {/* Continue button */}
                     <TouchableOpacity style={styles.continueButton} onPress={handleSignIn}>
                         <Text style={styles.continueButtonText}>Continue</Text>
                     </TouchableOpacity>
 
-                    {/* Divider */}
-                    <View style={styles.divider}>
-                        <View style={styles.dividerLine}/>
-                        <Text style={styles.dividerText}>Or Sign in with</Text>
-                        <View style={styles.dividerLine}/>
-                    </View>
 
                     {/* Sign up section */}
                     <View style={styles.signUpPrompt}>

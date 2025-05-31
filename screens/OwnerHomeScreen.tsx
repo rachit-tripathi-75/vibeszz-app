@@ -22,12 +22,19 @@ import {LineChart, BarChart} from "react-native-chart-kit"
 import {Ionicons} from "@expo/vector-icons"
 import {CommonActions} from "@react-navigation/native";
 import SignInScreen from "./SignInScreen";
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import {createNativeStackNavigator} from '@react-navigation/native-stack';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 
-const ownerId: string = 'owner174';
-const venueCapacity: number = 400;
-
+const getData = async (key: string): Promise<string | null> => {
+    try {
+        const value: string | null = await AsyncStorage.getItem(key);
+        return value;
+    } catch (error) {
+        console.error("Reading error: ", error);
+        return null;
+    }
+};
 
 interface FootfallData {
     [year: string]: {
@@ -60,11 +67,21 @@ interface TodayFootfallResponse {
 const OwnerProfileScreen: React.FC = () => {
     const navigation = useNavigation();
     const [profileData, setProfileData] = useState<OwnerData | null>(null);
-
+    const [ownerId, setOwnerId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const getOwnerProfileDetails = () => {
+        const fetchOwnerId = async () => {
+            const value = await getData('ownerId');
+            setOwnerId(value);
+        };
+        fetchOwnerId();
+    }, []);
 
+    useEffect(() => {
+        if (!ownerId) return;
+
+        const getOwnerProfileDetails = () => {
             const path = `ownerdb/${ownerId}`;
             const ownerProfileDetailsPref = ref(db, path);
 
@@ -72,59 +89,73 @@ const OwnerProfileScreen: React.FC = () => {
                 if (snapshot.exists()) {
                     const data: OwnerData = snapshot.val();
                     setProfileData(data);
-                    console.log(`yes i found user's data`);
                 } else {
                     setProfileData(null);
                 }
-
+                setLoading(false);
             }, (error) => {
                 console.error("Error fetching owner's profile details: " + error);
                 setProfileData(null);
+                setLoading(false);
             });
             return () => unsubscribe();
         };
 
-        getOwnerProfileDetails()
+        getOwnerProfileDetails();
+    }, [ownerId]);
 
+    const handleLogout = async () => {
+        try {
+            await AsyncStorage.clear();
+            navigation.dispatch(
+                CommonActions.reset({
+                    index: 0,
+                    routes: [{ name: "SignIn" }],
+                })
+            );
+        } catch (e) {
+            console.error('Logout error:', e);
+        }
+    };
 
-    }, []);
-
-    const handleLogout = () => {
-        navigation.dispatch(
-            CommonActions.reset({
-                index: 0,
-                routes: [{name: "SignIn"}]
-            })
-        )
+    if (loading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
+            </View>
+        );
     }
 
     return (
         <ScrollView style={styles.containerProfileScreen} showsVerticalScrollIndicator={false}>
             <View style={styles.headerProfileScreen}>
                 <View style={styles.profileImageContainer}>
-                    <Image source={{uri: `data:image/jpeg;base64,${profileData?.photoBase64}`}}
-                           style={styles.profileImage}/>
+                    {profileData?.photoBase64 ? (
+                        <Image
+                            source={{uri: `data:image/jpeg;base64,${profileData.photoBase64}`}}
+                            style={styles.profileImage}
+                        />
+                    ) : (
+                        <View style={[styles.profileImage, styles.profileImagePlaceholder]}>
+                            <Ionicons name="person" size={32} color="#FFFFFF" />
+                        </View>
+                    )}
                     <TouchableOpacity style={styles.editImageButton}>
                         <Ionicons name="camera" size={16} color="#FFFFFF"/>
                     </TouchableOpacity>
                 </View>
 
-                <Text style={styles.userName}>{profileData?.ownerName}</Text>
-                <Text style={styles.userEmail}>{profileData?.mobileNumber}</Text>
-
-
+                <Text style={styles.userName}>{profileData?.ownerName || 'No Name'}</Text>
+                <Text style={styles.userEmail}>{profileData?.mobileNumber || 'No Phone Number'}</Text>
             </View>
-
 
             <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                 <Ionicons name="log-out-outline" size={24} color="#EF4444"/>
                 <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
         </ScrollView>
-    )
-
-
-}
+    );
+};
 
 const Tab = createBottomTabNavigator();
 
@@ -144,38 +175,35 @@ const OwnerHomeScreen: React.FC = () => {
                             ),
                         }}/>
         </Tab.Navigator>
-
     );
 };
 
-export default OwnerHomeScreen;
+const groupByPeriod = (data: any[], period: string) => {
+    if (!data || data.length === 0) return [];
 
-
-const mockVenue = {
-    id: "1",
-    name: "Club Illusion",
-    type: "club",
-    capacity: 200,
-    city: "Mumbai",
-}
-
-const groupByPeriod = (data, period) => {
-    const grouped = {};
+    const grouped: Record<string, number[]> = {};
 
     data.forEach(({date, count}) => {
-        let key;
-        if (period === 'daily') {
-            key = date.toISOString().split('T')[0]; // YYYY-MM-DD
-        } else if (period === 'monthly') {
-            key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        } else if (period === 'yearly') {
-            key = `${date.getFullYear()}`;
-        }
+        if (!date) return;
 
-        if (!grouped[key]) {
-            grouped[key] = [];
+        let key;
+        try {
+            if (period === 'daily') {
+                key = new Date(date).toISOString().split('T')[0];
+            } else if (period === 'monthly') {
+                const d = new Date(date);
+                key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            } else if (period === 'yearly') {
+                key = `${new Date(date).getFullYear()}`;
+            }
+
+            if (!grouped[key]) {
+                grouped[key] = [];
+            }
+            grouped[key].push(count);
+        } catch (e) {
+            console.error('Error processing date:', date, e);
         }
-        grouped[key].push(count);
     });
 
     return Object.keys(grouped).map(label => {
@@ -189,18 +217,25 @@ const groupByPeriod = (data, period) => {
             avgMonthly: avg,
         };
     });
-}
+};
 
-const flattenFootfallData = (footfallData) => {
-    const result = [];
+const flattenFootfallData = (footfallData: FootfallData | null) => {
+    if (!footfallData) return [];
+
+    const result: {date: Date, count: number}[] = [];
 
     for (const year in footfallData) {
         for (const month in footfallData[year]) {
             for (const day in footfallData[year][month]) {
                 const count = footfallData[year][month][day].count;
-                // const date = new Date(`${year}-${month}-${day}`);
-                const date = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
-                result.push({date, count});
+                try {
+                    const date = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+                    if (!isNaN(date.getTime())) {
+                        result.push({date, count});
+                    }
+                } catch (e) {
+                    console.error('Error creating date:', e);
+                }
             }
         }
     }
@@ -208,195 +243,111 @@ const flattenFootfallData = (footfallData) => {
     return result;
 };
 
-
-const UploadAndViewFootfallScreen = () => {
-    const [venue, setVenue] = useState(mockVenue)
-    // const [currentFootfall, setCurrentFootfall] = useState("")
-    const [selectedPeriod, setSelectedPeriod] = useState("daily") // daily, monthly, yearly
-    // const [analyticsData, setAnalyticsData] = useState(generateDemoData())
-    const [chartData, setChartData] = useState({})
-    const [footfallCount, setFootfallCount] = useState<string>('');
-    const [footfall, setFootfall] = useState([]);
-    const rawData = footfall;
-    const groupedData = groupByPeriod(rawData, selectedPeriod);
-    const [approvedOwnerIds, setApprovedOwnerIds] = useState([]);
+const UploadAndViewFootfallScreen: React.FC = () => {
+    const [selectedPeriod, setSelectedPeriod] = useState("daily");
+    const [footfallCount, setFootfallCount] = useState('');
+    const [footfall, setFootfall] = useState<any[]>([]);
+    const [approvedOwnerIds, setApprovedOwnerIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [todayFootfall, setTodayFootfall] = useState(0);
     const [capacity, setCapacity] = useState(0);
-
-    const fetchFootfall = (year = null, month = null, day = null) => {
-        // let path = `/ownerdb/${ownerId}/footfall/${year}`;
-        // if (month) path += `/${month}`;
-        // if (day) path += `/${day}`;
-        let path = `/ownerdb/${ownerId}/footfall`;
-        if (year) path += `/${year}`;
-        if (month) path += `/${month}`;
-        if (day) path += `/${day}`;
-
-
-        const footfallRef = ref(db, path);
-
-        onValue(
-            footfallRef,
-            (snapshot) => {
-                const data = snapshot.val();
-                console.log("Snapshot data: ", data);
-                if (data) {
-                    const formatted = flattenFootfallData(
-                        year && month && day ? {[year]: {[month]: {[day]: data}}} :
-                            year && month ? {[year]: {[month]: data}} :
-                                year ? {[year]: data} :
-                                    data
-                    );
-                    setFootfall(formatted);
-                } else {
-                    console.log('No footfall data found');
-                    setFootfall([]);
-                }
-            },
-            (error) => {
-                console.error("Error fetching footfall: " + error);
-                Alert.alert('Error', "Could not fetch footfall data: " + error.message);
-            }
-        );
-    };
-
+    const [profileData, setProfileData] = useState<OwnerData | null>(null);
+    const [ownerId, setOwnerId] = useState<string | null>(null);
+    const [profileLoading, setProfileLoading] = useState(true);
 
     useEffect(() => {
-        fetchFootfall();
+        const fetchOwnerId = async () => {
+            const value = await getData('ownerId');
+            setOwnerId(value);
+        };
+        fetchOwnerId();
     }, []);
 
+    useEffect(() => {
+        if (!ownerId) return;
+
+        const getOwnerProfileDetails = () => {
+            const path = `ownerdb/${ownerId}`;
+            const ownerProfileDetailsPref = ref(db, path);
+
+            const unsubscribe = onValue(ownerProfileDetailsPref, (snapshot) => {
+                if (snapshot.exists()) {
+                    const data: OwnerData = snapshot.val();
+                    setProfileData(data);
+                    setCapacity(data.capacity || 0);
+                } else {
+                    setProfileData(null);
+                    setCapacity(0);
+                }
+                setProfileLoading(false);
+            }, (error) => {
+                console.error("Error fetching owner's profile details: " + error);
+                setProfileData(null);
+                setCapacity(0);
+                setProfileLoading(false);
+            });
+            return () => unsubscribe();
+        };
+
+        getOwnerProfileDetails();
+    }, [ownerId]);
+
+    useEffect(() => {
+        if (!ownerId) return;
+
+        const fetchFootfall = () => {
+            const path = `/ownerdb/${ownerId}/footfall`;
+            const footfallRef = ref(db, path);
+
+            onValue(
+                footfallRef,
+                (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        const formatted = flattenFootfallData(data);
+                        setFootfall(formatted);
+                    } else {
+                        setFootfall([]);
+                    }
+                },
+                (error) => {
+                    console.error("Error fetching footfall: " + error);
+                    setFootfall([]);
+                }
+            );
+        };
+
+        fetchFootfall();
+    }, [ownerId]);
 
     useEffect(() => {
         const approvedOwnersRef = ref(db, 'approved/ownerIds');
         const unsubscribe = onValue(
-            approvedOwnersRef, (snapshot) => {
+            approvedOwnersRef,
+            (snapshot) => {
                 const data = snapshot.val();
-                console.log('Approved owners data: ', data);
-                if (data) {
-                    const idsArray = Object.values(data);
-                    setApprovedOwnerIds(idsArray);
-                } else {
-                    console.log('No approved owners found');
-                    setApprovedOwnerIds([]);
-                }
+                setApprovedOwnerIds(data ? Object.values(data) : []);
                 setIsLoading(false);
             },
             (error) => {
                 console.error("Error fetching approved owners: " + error);
-                Alert.alert('Error', "Could not fetch approved owners: " + error.message);
+                setApprovedOwnerIds([]);
                 setIsLoading(false);
             }
         );
         return () => unsubscribe();
     }, []);
 
-
-    const handleUpdateFootfall = async () => {
-
-        // if (!currentFootfall) {
-        //     Alert.alert("Error", "Please enter the current footfall")
-        //     return
-        // }
-        //
-        // const footfall = Number.parseInt(currentFootfall)
-        //
-        // if (isNaN(footfall) || footfall < 0) {
-        //     Alert.alert("Error", "Please enter a valid number")
-        //     return
-        // }
-        //
-        // if (footfall > venue.capacity) {
-        //     Alert.alert("Error", `Footfall cannot exceed venue capacity (${venue.capacity})`)
-        //     return
-        // }
-
-        const today = new Date();
-        const year = today.getFullYear().toString();
-        const month = (today.getMonth() + 1).toString().padStart(2, '0');
-        const day = today.getDate().toString().padStart(2, '0');
-
-        const count = parseInt(footfallCount);
-        if (isNaN(count) || count < 0 || count > capacity) {
-            Alert.alert('Invalid Input', `Enter a number between 0 and ${capacity}`);
-            return;
-        }
-
-
-        const footfallRef = ref(db, `/ownerdb/${ownerId}/footfall/${year}/${month}/${day}`);
-
-        try {
-            await set(footfallRef, {
-                count,
-            });
-            Alert.alert('Success', 'Footfall updated successfully!');
-            setFootfallCount('');
-        } catch (error) {
-            console.error(error);
-            Alert.alert('Error', 'Error updating footfall');
-        }
-
-
-        // Update today's footfall in daily data
-        // const updatedData = {...analyticsData}
-        // const todayIndex = updatedData.daily.length - 1
-        // updatedData.daily[todayIndex].count = count
-        //
-        // setAnalyticsData(updatedData)
-        // setCurrentFootfall("")
-        setFootfallCount('');
-        Alert.alert("Success", "Footfall updated successfully")
-    }
-
-
-    const calculateOccupancyPercentage = (count) => {
-        return Math.round((count / capacity) * 100)
-    }
-
-
     useEffect(() => {
-        const getCapacity = () => {
-            // fetch the owner's capacity from firebase, and set that value..........
+        if (!ownerId) return;
 
-
-            const path = `ownerdb/${ownerId}`;
-            const capacityRef = ref(db, path);
-
-
-            const unsubscribe = onValue(capacityRef, (snapshot) => {
-                if (snapshot.exists()) {
-                    const data = snapshot.val();
-                    setCapacity(data.capacity);
-                    console.log(`Capacity for ownerID ${ownerId}: ` + data.capacity);
-                } else {
-                    setCapacity(0);
-                    console.log(`Capacity for ownerID ${ownerId}: ` + snapshot.val().capacity);
-                }
-
-            }, (error) => {
-                console.error("Error fetching today's footfall: " + error.message);
-                setCapacity(0)
-            });
-            return () => unsubscribe();
-        };
-
-        getCapacity();
-
-    }, [ownerId]);
-
-
-    useEffect(() => {
         const getTodayFootfall = () => {
-            // fetch today's footfall from firebase, and return that value..........
-
-
             const today = new Date();
             const year = today.getFullYear().toString();
             const month = (today.getMonth() + 1).toString().padStart(2, '0');
             const day = today.getDate().toString().padStart(2, '0');
             const path = `ownerdb/${ownerId}/footfall/${year}/${month}/${day}`;
             const footfallRef = ref(db, path);
-
 
             const unsubscribe = onValue(footfallRef, (snapshot) => {
                 if (snapshot.exists()) {
@@ -405,7 +356,6 @@ const UploadAndViewFootfallScreen = () => {
                 } else {
                     setTodayFootfall(0);
                 }
-
             }, (error) => {
                 console.error("Error fetching today's footfall: " + error);
                 setTodayFootfall(0);
@@ -414,38 +364,50 @@ const UploadAndViewFootfallScreen = () => {
         };
 
         getTodayFootfall();
+    }, [ownerId]);
 
+    const handleUpdateFootfall = async () => {
+        if (!ownerId) return;
 
-    }, [ownerId])
+        const count = parseInt(footfallCount);
+        if (isNaN(count) || count < 0 || (capacity > 0 && count > capacity)) {
+            Alert.alert('Invalid Input', capacity > 0
+                ? `Enter a number between 0 and ${capacity}`
+                : 'Enter a valid positive number');
+            return;
+        }
 
+        const today = new Date();
+        const year = today.getFullYear().toString();
+        const month = (today.getMonth() + 1).toString().padStart(2, '0');
+        const day = today.getDate().toString().padStart(2, '0');
 
-    // const getAnalyticsStats = () => {
-    //     const currentData = analyticsData[selectedPeriod]
-    //     if (!currentData.length) return {total: 0, average: 0, peak: 0}
-    //
-    //     const values = currentData.map(item =>
-    //         selectedPeriod === 'daily' ? item.count :
-    //             selectedPeriod === 'monthly' ? item.avgDaily :
-    //                 item.avgMonthly
-    //     )
-    //
-    //     return {
-    //         total: values.reduce((sum, val) => sum + val, 0),
-    //         average: Math.round(values.reduce((sum, val) => sum + val, 0) / values.length),
-    //         peak: Math.max(...values)
-    //     }
-    // }
+        const footfallRef = ref(db, `/ownerdb/${ownerId}/footfall/${year}/${month}/${day}`);
+
+        try {
+            await set(footfallRef, { count });
+            Alert.alert('Success', 'Footfall updated successfully!');
+            setFootfallCount('');
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'Error updating footfall');
+        }
+    };
+
+    const calculateOccupancyPercentage = (count: number) => {
+        if (!capacity || capacity === 0) return 0;
+        return Math.round((count / capacity) * 100);
+    };
 
     const periodButtons = [
         {key: "daily", label: "Daily", icon: "calendar-outline"},
         {key: "monthly", label: "Monthly", icon: "calendar"},
         {key: "yearly", label: "Yearly", icon: "calendar-sharp"}
-    ]
+    ];
 
-    // const stats = getAnalyticsStats()
+    const groupedData = groupByPeriod(footfall, selectedPeriod);
 
-
-    const renderHistoryItem = ({item}) => (
+    const renderHistoryItem = ({item}: {item: any}) => (
         <View style={styles.historyItem}>
             <Text style={styles.historyDate}>
                 {selectedPeriod === 'daily' ? new Date(item.date).toLocaleDateString() :
@@ -461,188 +423,147 @@ const UploadAndViewFootfallScreen = () => {
                 <Text style={styles.historyPercentage}>
                     {selectedPeriod === 'daily' ? `${calculateOccupancyPercentage(item.count)}% Filled` :
                         selectedPeriod === 'monthly' ? `${calculateOccupancyPercentage(item.avgDaily)}% Avg Fill` :
-                            `${Math.round(item.avgMonthly / capacity * 100)}% Avg Fill`}
+                            `${Math.round(item.avgMonthly / (capacity || 1) * 100)}% Avg Fill`}
                 </Text>
             </View>
         </View>
     );
+
+    if (isLoading || profileLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#FFFFFF" />
+            </View>
+        );
+    }
+
+    if (!approvedOwnerIds.includes(ownerId || '')) {
+        return (
+            <View style={styles.notApprovedContainer}>
+                <Text style={styles.notApprovedText}>
+                    Your profile has not been approved yet by admin
+                </Text>
+                <Text style={styles.notApprovedSubText}>
+                    Please contact support if you believe this is an error
+                </Text>
+            </View>
+        );
+    }
+
     return (
         <SafeAreaView style={styles.container}>
-            {isLoading ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#FFFFFF"/>
+            <View style={styles.header}>
+                <View>
+                    <Text style={styles.greeting}>Greetings 🔥</Text>
+                    <Text style={styles.venueName}>{profileData?.venueName || 'Venue'}</Text>
+                    <Text style={styles.venueDetails}>
+                        {profileData?.venueType || ''} • {profileData?.city || ''}
+                    </Text>
                 </View>
-            ) : approvedOwnerIds.includes(ownerId) ? (
-                <>
-                    <View style={styles.header}>
-                        <View>
-                            <Text style={styles.greeting}>Good Morning 🔥</Text>
-                            <Text style={styles.venueName}>{venue.name}</Text>
-                            <Text style={styles.venueDetails}>
-                                {venue.type.charAt(0).toUpperCase() + venue.type.slice(1)} • {venue.city}
+            </View>
+
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {/* Today's Footfall Card */}
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Today's Footfall</Text>
+
+                    <View style={styles.footfallContainer}>
+                        <View style={styles.currentFootfall}>
+                            <Text style={styles.footfallCount}>{todayFootfall}</Text>
+                            <Text style={styles.footfallLabel}>/ {capacity || 'N/A'}</Text>
+                        </View>
+
+                        <View style={styles.occupancyContainer}>
+                            <View style={styles.progressBarContainer}>
+                                <View
+                                    style={[
+                                        styles.progressBar,
+                                        {width: `${calculateOccupancyPercentage(todayFootfall)}%`},
+                                        calculateOccupancyPercentage(todayFootfall) > 80
+                                            ? styles.highOccupancy
+                                            : calculateOccupancyPercentage(todayFootfall) > 50
+                                                ? styles.mediumOccupancy
+                                                : styles.lowOccupancy,
+                                    ]}
+                                />
+                            </View>
+                            <Text style={styles.occupancyText}>
+                                {calculateOccupancyPercentage(todayFootfall)}% Filled
                             </Text>
                         </View>
                     </View>
 
-                    <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                        {/* Today's Footfall Card */}
-                        <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Today's Footfall</Text>
-
-                            <View style={styles.footfallContainer}>
-                                <View style={styles.currentFootfall}>
-                                    <Text style={styles.footfallCount}>{todayFootfall}</Text>
-                                    <Text style={styles.footfallLabel}>/ {capacity}</Text>
-                                </View>
-
-                                <View style={styles.occupancyContainer}>
-                                    <View style={styles.progressBarContainer}>
-                                        <View
-                                            style={[
-                                                styles.progressBar,
-                                                {width: `${calculateOccupancyPercentage(todayFootfall)}%`},
-                                                calculateOccupancyPercentage(todayFootfall) > 80
-                                                    ? styles.highOccupancy
-                                                    : calculateOccupancyPercentage(todayFootfall) > 50
-                                                        ? styles.mediumOccupancy
-                                                        : styles.lowOccupancy,
-                                            ]}
-                                        />
-                                    </View>
-                                    <Text
-                                        style={styles.occupancyText}>{calculateOccupancyPercentage(todayFootfall)}%
-                                        Filled</Text>
-                                </View>
-                            </View>
-
-                            <View style={styles.updateFootfallContainer}>
-                                <Text style={styles.updateLabel}>Update Today's Footfall:</Text>
-                                <View style={styles.updateInputContainer}>
-                                    <TextInput
-                                        style={styles.updateInput}
-                                        placeholder="Enter current footfall"
-                                        placeholderTextColor="#9CA3AF"
-                                        keyboardType="number-pad"
-                                        value={footfallCount}
-                                        onChangeText={setFootfallCount}
-                                    />
-                                    <TouchableOpacity style={styles.updateButton} onPress={handleUpdateFootfall}>
-                                        <Text style={styles.updateButtonText}>Update</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
+                    <View style={styles.updateFootfallContainer}>
+                        <Text style={styles.updateLabel}>Update Today's Footfall:</Text>
+                        <View style={styles.updateInputContainer}>
+                            <TextInput
+                                style={styles.updateInput}
+                                placeholder="Enter current footfall"
+                                placeholderTextColor="#9CA3AF"
+                                keyboardType="number-pad"
+                                value={footfallCount}
+                                onChangeText={setFootfallCount}
+                            />
+                            <TouchableOpacity
+                                style={styles.updateButton}
+                                onPress={handleUpdateFootfall}
+                                disabled={!capacity}
+                            >
+                                <Text style={styles.updateButtonText}>Update</Text>
+                            </TouchableOpacity>
                         </View>
-
-                        {/* Analytics Period Selection */}
-                        <View style={styles.card}>
-                            <Text style={styles.cardTitle}>Analytics Dashboard</Text>
-
-                            <View style={styles.periodSelector}>
-                                {periodButtons.map((period) => (
-                                    <TouchableOpacity
-                                        key={period.key}
-                                        style={[
-                                            styles.periodButton,
-                                            selectedPeriod === period.key && styles.activePeriodButton
-                                        ]}
-                                        onPress={() => setSelectedPeriod(period.key)}
-                                    >
-                                        <Ionicons
-                                            name={period.icon}
-                                            size={20}
-                                            color={selectedPeriod === period.key ? "#FFFFFF" : "#9CA3AF"}
-                                        />
-                                        <Text style={[
-                                            styles.periodButtonText,
-                                            selectedPeriod === period.key && styles.activePeriodButtonText
-                                        ]}>
-                                            {period.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-
-                            {/*/!* Stats Cards *!/*/}
-                            {/*<View style={styles.statsContainer}>*/}
-                            {/*    <View style={styles.statCard}>*/}
-                            {/*        <Text style={styles.statValue}>{stats.average}</Text>*/}
-                            {/*        <Text style={styles.statLabel}>*/}
-                            {/*            Avg {selectedPeriod === 'yearly' ? 'Monthly' : 'Daily'}*/}
-                            {/*        </Text>*/}
-                            {/*    </View>*/}
-                            {/*    <View style={styles.statCard}>*/}
-                            {/*        <Text style={styles.statValue}>{stats.peak}</Text>*/}
-                            {/*        <Text style={styles.statLabel}>Peak</Text>*/}
-                            {/*    </View>*/}
-                            {/*    <View style={styles.statCard}>*/}
-                            {/*        <Text style={styles.statValue}>*/}
-                            {/*            {selectedPeriod === 'daily' ? `${Math.round(stats.average / venue.capacity * 100)}%` :*/}
-                            {/*                selectedPeriod === 'monthly' ? `${Math.round(stats.average / venue.capacity * 100)}%` :*/}
-                            {/*                    `${Math.round(stats.average / venue.capacity * 100)}%`}*/}
-                            {/*        </Text>*/}
-                            {/*        <Text style={styles.statLabel}>Avg Fill Rate</Text>*/}
-                            {/*    </View>*/}
-                            {/*</View>*/}
-
-                            {/*/!* Chart *!/*/}
-                            {/*{chartData.labels && (*/}
-                            {/*    <LineChart*/}
-                            {/*        data={chartData}*/}
-                            {/*        width={screenWidth - 70}*/}
-                            {/*        height={220}*/}
-                            {/*        chartConfig={{*/}
-                            {/*            backgroundColor: "#374151",*/}
-                            {/*            backgroundGradientFrom: "#374151",*/}
-                            {/*            backgroundGradientTo: "#374151",*/}
-                            {/*            decimalPlaces: 0,*/}
-                            {/*            color: (opacity = 1) => `rgba(139, 92, 246, ${opacity})`,*/}
-                            {/*            labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,*/}
-                            {/*            style: {*/}
-                            {/*                borderRadius: 16,*/}
-                            {/*            },*/}
-                            {/*            propsForDots: {*/}
-                            {/*                r: "6",*/}
-                            {/*                strokeWidth: "2",*/}
-                            {/*                stroke: "#8B5CF6",*/}
-                            {/*            },*/}
-                            {/*        }}*/}
-                            {/*        bezier*/}
-                            {/*        style={styles.chart}*/}
-                            {/*    />*/}
-                            {/*)}*/}
-
-                            {/* Detailed History */}
-                            <View style={styles.historyList}>
-                                <Text style={styles.historyTitle}>
-                                    Recent {selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)} History
-                                </Text>
-                                <FlatList
-                                    // data={[...analyticsData[selectedPeriod]].reverse().slice(0, 5)} // recent 5 items in reverse order
-                                    data={groupedData.reverse()}
-                                    renderItem={renderHistoryItem}
-                                    keyExtractor={(item, index) => index.toString()}
-                                    ListEmptyComponent={
-                                        <Text style={styles.emptyText}>No data found</Text>
-                                    }
-                                />
-                            </View>
-                        </View>
-                    </ScrollView>
-                </>
-            ) : (
-                <View style={styles.notApprovedContainer}>
-                    <Text style={styles.notApprovedText}>
-                        Your profile has not been approved yet by admin
-                    </Text>
-                    <Text style={styles.notApprovedSubText}>
-                        Please contact support if you believe this is an error
-                    </Text>
+                    </View>
                 </View>
-            )}
 
+                {/* Analytics Period Selection */}
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Analytics Dashboard</Text>
+
+                    <View style={styles.periodSelector}>
+                        {periodButtons.map((period) => (
+                            <TouchableOpacity
+                                key={period.key}
+                                style={[
+                                    styles.periodButton,
+                                    selectedPeriod === period.key && styles.activePeriodButton
+                                ]}
+                                onPress={() => setSelectedPeriod(period.key)}
+                            >
+                                <Ionicons
+                                    name={period.icon}
+                                    size={20}
+                                    color={selectedPeriod === period.key ? "#FFFFFF" : "#9CA3AF"}
+                                />
+                                <Text style={[
+                                    styles.periodButtonText,
+                                    selectedPeriod === period.key && styles.activePeriodButtonText
+                                ]}>
+                                    {period.label}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+
+                    {/* Detailed History */}
+                    <View style={styles.historyList}>
+                        <Text style={styles.historyTitle}>
+                            Recent {selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)} History
+                        </Text>
+                        <FlatList
+                            data={groupedData.reverse()}
+                            renderItem={renderHistoryItem}
+                            keyExtractor={(item, index) => index.toString()}
+                            ListEmptyComponent={
+                                <Text style={styles.emptyText}>No data found</Text>
+                            }
+                        />
+                    </View>
+                </View>
+            </ScrollView>
         </SafeAreaView>
-    )
-}
+    );
+};
+
 
 
 const styles = StyleSheet.create({
@@ -1219,4 +1140,4 @@ const styles = StyleSheet.create({
     }
 })
 
-// export default OwnerHomeScreen
+export default OwnerHomeScreen

@@ -7,9 +7,9 @@ import AdminRegistrationScreen from "./screens/AdminRegistrationScreen"
 import UserHomeScreen from "./screens/UserHomeScreen"
 import OwnerHomeScreen from "./screens/OwnerHomeScreen"
 import AdminHomeScreen from "./screens/AdminHomeScreen"
-import VenueDetailScreen from "./screens/VenueDetailScreen"
 import {StatusBar} from "react-native";
 import UserMainScreen from "./screens/UserMainScreen";
+import VenueDetailsScreen from "./screens/VenueDetailsScreen";
 
 const Stack = createStackNavigator();
 
@@ -28,7 +28,7 @@ export default function App() {
                   <Stack.Screen name="UserMain" component={UserMainScreen} />
                   <Stack.Screen name="OwnerHome" component={OwnerHomeScreen} />
                   <Stack.Screen name="AdminHome" component={AdminHomeScreen} />
-                  <Stack.Screen name="VenueDetail" component={VenueDetailScreen} />
+                  <Stack.Screen name="VenueDetails" component={VenueDetailsScreen} />
               </Stack.Navigator>
           </NavigationContainer>
       </>

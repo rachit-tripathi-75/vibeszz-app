@@ -8,6 +8,7 @@ import {Ionicons} from "@expo/vector-icons"
 import {get, ref, set} from "firebase/database";
 import {db} from "../config/firebaseConfig";
 import Icon from "react-native-vector-icons/MaterialIcons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const UserRegistrationScreen = ({navigation}) => {
     const [mobileNumber, setMobileNumber] = useState("")
@@ -40,6 +41,14 @@ const UserRegistrationScreen = ({navigation}) => {
             console.log("Generated admin key: admin" + randomNum);
             return randomNum;
         }
+
+        const storeData = async(key: string, value: string) => {
+            try {
+                await AsyncStorage.setItem(key, value);
+            } catch (e) {
+                console.error('Saving error: ', e);
+            }
+        };
 
 
         const mobileNumbersRef = ref(db, 'registeredmobilenumbers');
@@ -74,6 +83,8 @@ const UserRegistrationScreen = ({navigation}) => {
                 console.log("Mobile number registered successfully");
 
                 const ownerRef = ref(db, `userdb/${primaryKeyForUser}`);
+
+                storeData('userId', primaryKeyForUser);
 
                 return set(ownerRef, {
                     id: primaryKeyForUser,
